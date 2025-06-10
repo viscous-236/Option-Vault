@@ -60,4 +60,16 @@ library ValidationLogic {
 
         return true;
     }
+
+    function validateCollateralPayment(
+        DataTypes.OptionData memory optionData
+    ) internal pure returns (bool) {
+        if (optionData.collateralAddress == address(0)) {
+            revert ValidationLogic__CollateralAddressCannotBeZero();
+        }
+        if (optionData.writerAddress == address(0)) {
+            revert ValidationLogic__WriterAddressCannotBeZero();
+        }
+
+        return true;
 }

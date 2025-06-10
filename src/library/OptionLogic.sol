@@ -10,14 +10,11 @@ library OptionLogic {
 
     uint256 constant PREMIUIM_PERCENTAGE = 5;
 
-    function createOption(
-        uint256 strikePrice,
-        uint256 amount,
-        bool isCall,
-        address writer,
-        address collateralAddress,
-        uint256 dueDate
-    ) internal view returns (DataTypes.OptionData memory) {
+    function createOption(uint256 strikePrice, uint256 amount, bool isCall, address writer, uint256 dueDate)
+        internal
+        view
+        returns (DataTypes.OptionData memory)
+    {
         DataTypes.OptionData memory optionData;
 
         uint256 collateralAmount = calculateCollateral(isCall, strikePrice, amount);
@@ -26,7 +23,7 @@ library OptionLogic {
 
         optionData.writerAddress = writer;
         optionData.isCall = isCall;
-        optionData.collateralAddress = collateralAddress;
+        optionData.collateralAddress = address(0);
         optionData.amount = collateralAmount;
         optionData.premium = premium;
         optionData.strikePrice = strikePrice;
