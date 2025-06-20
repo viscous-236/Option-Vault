@@ -10,6 +10,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IPERMIT2} from "./interfaces/IPERMIT2.sol";
 import {Permit2Logic} from "./library/Permit2Logic.sol";
+import {AaveInteraction} from "./library/AaveInteraction.sol";
 
 contract Main is ERC20, ReentrancyGuard {
     error Main__CollateralPaymentFailed(uint256 optionId, address collateralAddress, address payer, uint256 amount);
@@ -69,8 +70,12 @@ contract Main is ERC20, ReentrancyGuard {
             revert Main__CollateralPaymentFailed(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
         }
 
+        depositCollateralToAave(optionId);
+
         emit CollateraPayed(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
     }
+
+    
 
     function payPremiumWithPermit2(uint256 optionId, uint256 nounce, bytes calldata signature) external nonReentrant {
         DataTypes.OptionData storage optionData = options[optionId];
@@ -86,13 +91,35 @@ contract Main is ERC20, ReentrancyGuard {
         optionData.eligibleBuyers.push(msg.sender);
 
         uint256 premiumAmount = optionData.premium;
-        bool success =
-            Permit2Logic.transferUsingPermit2(premiumAmount, nounce, signature, token, optionData.writerAddress);
+        bool success = Permit2Logic.transferUsingPermit2(premiumAmount, nounce, signature, token, address(this));
 
         if (!success) {
             revert Main__PremiumPaymentFailed(optionId, token, msg.sender, premiumAmount);
         }
 
         emit PremiumPaid(optionId, token, msg.sender, premiumAmount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     INTERNAL_AND_PRIVATE_FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+
+    function depositCollateralToAave(uint256 optionId) internal nonReentrant returns (bool) {
+        DataTypes.OptionData storage optionData = options[optionId];
+        optionData.validateOptionData();
+        optionData.validateCollateralPayment(optionData);
+
+        uint256 collateralAmount = optionData.amount;
+        bool success = AaveInteraction.depositCollateralToAave(optionData, collateralAmount);
+        if (!success) {
+            revert Main__CollateralDepositToAaveFailed(
+                optionId, optionData.collateralAddress, msg.sender, collateralAmount
+            );
+        }
+
+        emit CollaterlDepsited(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
+
+
     }
 }
