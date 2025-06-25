@@ -12,9 +12,13 @@ import {IPERMIT2} from "./interfaces/IPERMIT2.sol";
 import {Permit2Logic} from "./library/Permit2Logic.sol";
 import {AaveInteraction} from "./library/AaveInteraction.sol";
 
-contract Main is ERC20, ReentrancyGuard {
+abstract contract Main is ERC20, ReentrancyGuard {
     error Main__CollateralPaymentFailed(uint256 optionId, address collateralAddress, address payer, uint256 amount);
     error Main__PremiumPaymentFailed(uint256 optionId, address token, address payer, uint256 amount);
+    error Main__CollateralDepositToAaveFailed(uint256 optionId, address collateralAddress, address depositor, uint256 amount);
+    error Main__CollateralWithdrawFailed(uint256 optionId);
+    error Main__OptionIdDoesNotExist(uint256 optionId);
+    error Main__UserIsNotEligibleForExercise(uint256 optionId, address user);
 
     using ValidationLogic for DataTypes.OptionData;
 
@@ -24,6 +28,9 @@ contract Main is ERC20, ReentrancyGuard {
     address private immutable usdcAddress;
     address private immutable wETHAddress;
     mapping(uint256 => DataTypes.OptionData) public options;
+    mapping(uint256 => bool) private isIdExists;
+    mapping(uint256 id => mapping(address buyerAddress => bool isEligible)) public isEligibleForExercise;
+    mapping(uint256 id => uint256 premiumCollected) public premiumCollected;
 
     constructor(address _usdcAddress, address _wETHAddress) {
         usdcAddress = _usdcAddress;
@@ -35,6 +42,9 @@ contract Main is ERC20, ReentrancyGuard {
     event OptionCreated(uint256 indexed optionId, DataTypes.OptionData optionData);
     event CollateraPayed(uint256 indexed optionId, address collateralAddress, address payer, uint256 amount);
     event PremiumPaid(uint256 indexed optionId, address token, address payer, uint256 amount);
+    event CollaterlDeposited(uint256 indexed optionId, address collateralAddress, address depositor, uint256 amount);
+    event CollateralWithdrawed(uint256 indexed optionId, uint256 amountWithdrawed);
+
 
     function createOption(bool _isCall, uint256 amount, uint256 strikePrice, uint256 dueDate) external {
         DataTypes.OptionData memory optionData =
@@ -42,44 +52,44 @@ contract Main is ERC20, ReentrancyGuard {
 
         if (_isCall) {
             optionData.collateralAddress = wETHAddress;
+            optionData.buyerTokenAddress = usdcAddress;
         } else {
             optionData.collateralAddress = usdcAddress;
+            optionData.buyerTokenAddress = wETHAddress;
         }
 
         optionData.validateOptionData();
         options[optionIdCounter] = optionData;
+        isIdExists[optionIdCounter] = true;
         optionIdCounter++;
         emit OptionCreated(optionIdCounter - 1, optionData);
     }
 
-    function payCollateralWithPermit2(uint256 optionId, uint256 nounce, bytes calldata signature)
-        external
-        nonReentrant
-    {
+    
+
+
+    function depositCollateralToAave(uint256 optionId) external nonReentrant returns (bool) {
+        if (!isIdExists[optionId]) {
+            revert Main__OptionIdDoesNotExist(optionId);
+        }
         DataTypes.OptionData storage optionData = options[optionId];
-        optionData.validateOptionData();
-        optionData.validateCollateralPayment(optionData);
+        optionData.validateCollateralPayment();
 
         uint256 collateralAmount = optionData.amount;
-
-        bool success = Permit2Logic.transferUsingPermit2(
-            collateralAmount, nounce, signature, optionData.collateralAddress, address(this)
-        );
-
+        bool success = AaveInteraction.depositCollateralToAave(optionData, collateralAmount, msg.sender);
         if (!success) {
-            revert Main__CollateralPaymentFailed(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
+            revert Main__CollateralDepositToAaveFailed(
+                optionId, optionData.collateralAddress, msg.sender, collateralAmount
+            );
         }
 
-        depositCollateralToAave(optionId);
-
-        emit CollateraPayed(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
+        emit CollaterlDeposited(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
     }
-
-    
 
     function payPremiumWithPermit2(uint256 optionId, uint256 nounce, bytes calldata signature) external nonReentrant {
         DataTypes.OptionData storage optionData = options[optionId];
         optionData.validateOptionData();
+        optionData.validatePremiumPay();
 
         address token;
         if (optionData.isCall) {
@@ -89,6 +99,8 @@ contract Main is ERC20, ReentrancyGuard {
         }
 
         optionData.eligibleBuyers.push(msg.sender);
+        isEligibleForExercise[optionId][msg.sender] = true;
+        premiumCollected[optionId] += optionData.premium;
 
         uint256 premiumAmount = optionData.premium;
         bool success = Permit2Logic.transferUsingPermit2(premiumAmount, nounce, signature, token, address(this));
@@ -97,29 +109,48 @@ contract Main is ERC20, ReentrancyGuard {
             revert Main__PremiumPaymentFailed(optionId, token, msg.sender, premiumAmount);
         }
 
+        if (!optionData.isEligibleForExercise)
+        {
+            optionData.isEligibleForExercise = true;
+        }
+
         emit PremiumPaid(optionId, token, msg.sender, premiumAmount);
     }
+
+    function exerciseOption(uint256 optionId, uint256 nounce, bytes calldata signature) external nonReentrant {
+        DataTypes.OptionData storage optionData = options[optionId];
+        optionData.validateExerciseOption();
+        if (!isEligibleForExercise[optionId][msg.sender]) {
+            revert Main__UserIsNotEligibleForExercise(optionId, msg.sender);
+        }
+
+        bool success;
+        if (optionData.isCall) {
+            success = Permit2Logic.transferUsingPermit2(
+                optionData.amount, nounce, signature, optionData.buyerTokenAddress, optionData.writerAddress);
+        }else {
+            success = Permit2Logic.transferUsingPermit2(
+                optionData.amount, nounce, signature, optionData.buyerTokenAddress, optionData.writerAddress);
+        }
+    }
+
 
     /*//////////////////////////////////////////////////////////////
                      INTERNAL_AND_PRIVATE_FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-
-    function depositCollateralToAave(uint256 optionId) internal nonReentrant returns (bool) {
+    function _withdrawCollateralFromAave(uint256 optionId) internal returns (bool) {
         DataTypes.OptionData storage optionData = options[optionId];
-        optionData.validateOptionData();
-        optionData.validateCollateralPayment(optionData);
+        optionData.validateCollateralPayment();
 
-        uint256 collateralAmount = optionData.amount;
-        bool success = AaveInteraction.depositCollateralToAave(optionData, collateralAmount);
+        (bool success, uint256 amountWithdrawed) = AaveInteraction.withdrawCollateralFromAave(optionData);
         if (!success) {
-            revert Main__CollateralDepositToAaveFailed(
-                optionId, optionData.collateralAddress, msg.sender, collateralAmount
-            );
+            revert Main__CollateralWithdrawFailed(optionId);
         }
 
-        emit CollaterlDepsited(optionId, optionData.collateralAddress, msg.sender, collateralAmount);
+        optionData.yeildEarned = optionData.amount - amountWithdrawed;
 
-
+        emit CollateralWithdrawed(optionId,amountWithdrawed);
     }
+        
+
 }

@@ -32,7 +32,6 @@ library OptionLogic {
         optionData.buyerAddress = address(0);
         optionData.isEligibleForExercise = false;
         optionData.eligibleBuyers = new address[](0);
-        optionData.isExercised = false;
         optionData.isSettled = false;
         optionData.yeildEarned = 0;
 

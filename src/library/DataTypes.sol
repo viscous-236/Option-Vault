@@ -7,6 +7,7 @@ library DataTypes {
         address writerAddress;
         bool isCall;
         address collateralAddress;
+        address buyerTokenAddress;
         uint256 amount;
         uint256 premium;
         uint256 strikePrice;
