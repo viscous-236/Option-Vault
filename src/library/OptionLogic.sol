@@ -8,7 +8,9 @@ import {ValidationLogic} from "../library/ValidationLogic.sol";
 library OptionLogic {
     using ValidationLogic for DataTypes.OptionData;
 
-    uint256 constant PREMIUIM_PERCENTAGE = 5;
+    uint256 constant PREMIUM_BASIS_POINTS = 500; // 5%
+    uint256 constant BASIS_POINTS_DENOMINATOR = 10000;
+    uint256 constant PRECISION_SCALE = 1e18;
 
     function createOption(uint256 strikePrice, uint256 amount, bool isCall, address writer, uint256 dueDate)
         internal
@@ -43,7 +45,7 @@ library OptionLogic {
     function calculateCollateral(bool isCall, uint256 strikePrice, uint256 amount)
         internal
         pure
-        returns (uint256 FinalcollateralAmount)
+        returns (uint256 finalcollateralAmount)
     {
         if (amount <= 0) {
             revert ValidationLogic.ValidationLogic__MustBeGreaterThanZero(amount);
@@ -52,12 +54,12 @@ library OptionLogic {
             revert ValidationLogic.ValidationLogic__MustBeGreaterThanZero(strikePrice);
         }
         if (isCall) {
-            FinalcollateralAmount = amount;
+            finalcollateralAmount = amount;
         } else {
-            FinalcollateralAmount = (strikePrice * amount) / 1e18;
+            finalcollateralAmount = (strikePrice * amount) / 1e18;
         }
 
-        return FinalcollateralAmount;
+        return finalcollateralAmount;
     }
 
     function calculatePremium(bool isCall, uint256 strikePrice, uint256 amount)
@@ -73,9 +75,13 @@ library OptionLogic {
         }
 
         if (isCall) {
-            premium = (strikePrice * amount * PREMIUIM_PERCENTAGE) / 100;
+            premium = (strikePrice * amount * PREMIUM_BASIS_POINTS) / (BASIS_POINTS_DENOMINATOR * PRECISION_SCALE);
         } else {
-            premium = (amount * PREMIUIM_PERCENTAGE) / 100;
+            premium = (amount * PREMIUM_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        }
+
+        if (premium == 0) {
+            premium = 1;
         }
 
         return premium;

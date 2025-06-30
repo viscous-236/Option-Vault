@@ -16,7 +16,6 @@ library DataTypes {
         address buyerAddress;
         bool isEligibleForExercise;
         address[] eligibleBuyers;
-        bool isExercised;
         bool isSettled;
         uint256 yeildEarned;
     }

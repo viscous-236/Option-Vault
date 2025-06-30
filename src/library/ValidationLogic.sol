@@ -51,9 +51,7 @@ library ValidationLogic {
         return true;
     }
 
-    function validateCollateralPayment(
-        DataTypes.OptionData memory optionData
-    ) internal pure returns (bool) {
+    function validateCollateralPayment(DataTypes.OptionData memory optionData) internal pure returns (bool) {
         if (optionData.collateralAddress == address(0)) {
             revert ValidationLogic__CollateralAddressCannotBeZero();
         }
@@ -64,10 +62,8 @@ library ValidationLogic {
         return true;
     }
 
-    function validateExerciseOption(
-        DataTypes.OptionData memory optionData
-    ) internal view returns (bool) {
-        if (!optionData.isEligibleForExercise){
+    function validateExerciseOption(DataTypes.OptionData memory optionData) internal view returns (bool) {
+        if (!optionData.isEligibleForExercise) {
             revert ValidationLogic__OptionIsNotEligibleForExercise();
         }
         if (optionData.isSettled) {

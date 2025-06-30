@@ -12,28 +12,26 @@ library AaveInteraction {
 
     IPool private constant AAVE_POOL = IPool(0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2);
 
-    function depositCollateralToAave(DataTypes.OptionData storage optionData, uint256 _amount, address _depositer) internal returns (bool) {
-
-        AAVE_POOL.supply(
-            optionData.collateralAddress,
-            _amount,
-            _depositer,
-            0
-        );
+    function depositCollateralToAave(DataTypes.OptionData storage optionData, uint256 _amount, address _depositer)
+        internal
+        returns (bool)
+    {
+        AAVE_POOL.supply(optionData.collateralAddress, _amount, _depositer, 0);
 
         return true;
     }
 
-    function withdrawCollateralFromAave(DataTypes.OptionData storage optionData) internal returns (bool,uint256) {
-        IERC20 collateralToken = IERC20(optionData.collateralAddress);
+    function withdrawCollateralFromAave(DataTypes.OptionData storage optionData, uint256 amount, address _withdrawer)
+        internal
+        returns (uint256)
+    {
+        uint256 withdrawAmount = AAVE_POOL.withdraw(optionData.collateralAddress, amount, _withdrawer);
 
-        uint256 withdrawAmount = AAVE_POOL.withdraw(
-            collateralToken,
-            type(uint256).max,
-            msg.sender
-        );
-
-        return (true,withdrawAmount);
+        return withdrawAmount;
     }
 
+    function getReserveData(address _token) internal view returns (IPool.ReserveData memory reserveData) {
+        reserveData = AAVE_POOL.getReserveData(_token);
+        return reserveData;
+    }
 }
