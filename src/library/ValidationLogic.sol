@@ -3,6 +3,7 @@
 pragma solidity ^0.8.18;
 
 import {DataTypes} from "./DataTypes.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 library ValidationLogic {
     error ValidationLogic__MustBeGreaterThanZero(uint256 value);
@@ -13,6 +14,10 @@ library ValidationLogic {
     error ValidationLogic__WriterAddressCannotBeZero();
     error ValidationLogic__OptionIsAlreadySettled();
     error ValidationLogic__OptionIsNotEligibleForExercise();
+    error ValidationLogic__AmountExceedsOptionAmount(uint256 amount);
+    error ValidationLogic__BuyerDosentHaveEnoughAmount(
+        uint256 optionId, address buyerTokenAddress, address buyer, uint256 requiredAmount
+    );
 
     function validateOptionData(DataTypes.OptionData memory optionData) internal view returns (bool) {
         if (optionData.amount <= 0) {
@@ -62,7 +67,14 @@ library ValidationLogic {
         return true;
     }
 
-    function validateExerciseOption(DataTypes.OptionData memory optionData) internal view returns (bool) {
+    function validateExerciseOption(
+        DataTypes.OptionData memory optionData,
+        uint256 optionId,
+        uint256 _amount,
+        address _buyer
+    ) internal view {
+        uint256 strikeprice = optionData.strikePrice;
+        uint256 amount = optionData.amount;
         if (!optionData.isEligibleForExercise) {
             revert ValidationLogic__OptionIsNotEligibleForExercise();
         }
@@ -72,7 +84,21 @@ library ValidationLogic {
         if (block.timestamp > optionData.dueDate) {
             revert ValidationLogic__DueDateAlreadyPassed();
         }
-
-        return true;
+        if (_amount > amount) {
+            revert ValidationLogic__AmountExceedsOptionAmount(_amount);
+        }
+        if (optionData.isCall) {
+            if (IERC20(optionData.buyerTokenAddress).balanceOf(_buyer) < amount * strikeprice) {
+                revert ValidationLogic__BuyerDosentHaveEnoughAmount(
+                    optionId, optionData.buyerTokenAddress, _buyer, amount * strikeprice
+                );
+            }
+        } else {
+            if (IERC20(optionData.buyerTokenAddress).balanceOf(_buyer) < amount) {
+                revert ValidationLogic__BuyerDosentHaveEnoughAmount(
+                    optionId, optionData.buyerTokenAddress, _buyer, amount
+                );
+            }
+        }
     }
 }
