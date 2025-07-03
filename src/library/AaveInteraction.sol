@@ -30,8 +30,7 @@ library AaveInteraction {
         return withdrawAmount;
     }
 
-    function getReserveData(address _token) internal view returns (IPool.ReserveData memory reserveData) {
-        reserveData = AAVE_POOL.getReserveData(_token);
-        return reserveData;
+    function getCollateralATokenAddress(DataTypes.OptionData storage optionData) internal view returns (address) {
+        return AAVE_POOL.getReserveData(optionData.collateralAddress).aTokenAddress;
     }
 }
